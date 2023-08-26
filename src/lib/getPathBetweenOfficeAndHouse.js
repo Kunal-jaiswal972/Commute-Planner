@@ -1,9 +1,10 @@
-const getPathBetweenOfficeAndHouse = async (office, house) => {
+export const getPathBetweenOfficeAndHouse = async (office, house) => {
   const [officeLat, officeLng] = office;
   const [houseLat, houseLng] = house;
 
-  const stops = `${officeLat},${officeLng};${houseLat},${houseLng}`;
-  const url = `https://trueway-directions2.p.rapidapi.com/FindDrivingRoute?stops=${stops}`;
+  // const stops = `${officeLat},${officeLng};${houseLat},${houseLng}`;
+  // const url = `https://trueway-directions2.p.rapidapi.com/FindDrivingRoute?stops=${stops}`;
+  const url = `https://trueway-directions2.p.rapidapi.com/FindDrivingPath?origin=${officeLat},${officeLng}&destination=${houseLat},${houseLng}&start_time="now"`;
 
   const options = {
     method: "GET",
@@ -22,4 +23,3 @@ const getPathBetweenOfficeAndHouse = async (office, house) => {
   }
 };
 
-export default getPathBetweenOfficeAndHouse;

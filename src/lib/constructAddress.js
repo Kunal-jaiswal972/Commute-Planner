@@ -1,4 +1,4 @@
-export default function constructAddress(tags) {
+export const constructAddress = (tags) => {
   const address = [];
   const info = [];
   let name = "";
@@ -16,4 +16,4 @@ export default function constructAddress(tags) {
   }
 
   return [address.join(", "), name, info];
-}
+};
