@@ -270,7 +270,6 @@ const MapComponent = () => {
                           <div>{address[0]}</div>
                           <div>{address[1]}</div>
                           <div>{address[2]}</div>
-                          {path && <DetailsCard pathInfo={pathInfo} />}
                         </Popup>
                       </Marker>
                     );
