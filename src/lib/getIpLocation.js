@@ -1,9 +1,11 @@
-export const getIpLocation = async () => {
-  const apiKey = import.meta.env.VITE_REACT_APP_MAPTILER_API_KEY;
-  const response = await fetch(
-    `https://api.maptiler.com/geolocation/ip.json?key=${apiKey}`
-  );
-  const location = await response.json();
-  return location;
-};
+import axiosInstance from "@/lib/axiosInstance";
 
+export const getIpLocation = async () => {
+  try {
+    const response = await axiosInstance.get("/ip");
+    return response.data;
+  } catch (error) {
+    console.error("[getIpLocation]", error);
+    return { error: "An error occurred while fetching IP location" };
+  }
+};

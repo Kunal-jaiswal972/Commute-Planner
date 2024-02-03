@@ -1,17 +1,15 @@
-export async function getHousesWithinRadius(lat, lon, radius) {
-  const overpassUrl = `https://overpass-api.de/api/interpreter`;
-  const query = `[out:json][timeout:25];(node(around:${radius},${lat},${lon})["building"];);out;`;
+import axiosInstance from "@/lib/axiosInstance";
 
+export const getHousesWithinRadius = async (latitude, longitude, radius) => {
   try {
-    const response = await fetch(overpassUrl, {
-      method: "POST",
-      body: query,
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    const response = await axiosInstance.post("/getDummyHouses", {
+      latitude,
+      longitude,
+      radius,
     });
-
-    const data = await response.json();
-    return data.elements;
+    return response.data;
   } catch (error) {
-    return { error: error.message };
+    console.error("[getHousesWithinRadius]", error);
+    return { error: "An error occurred while fetching house information" };
   }
-}
+};

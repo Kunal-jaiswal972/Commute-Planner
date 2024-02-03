@@ -1,114 +1,70 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   MapContainer,
-  TileLayer,
   Marker,
   Popup,
+  TileLayer,
   ZoomControl,
-  Circle,
   Polyline,
 } from "react-leaflet";
 import MarkerClusterGroup from "react-leaflet-cluster";
-import { GeocodingControl } from "@maptiler/geocoding-control/react";
-import { InfinitySpin } from "react-loader-spinner";
 import { toast } from "react-hot-toast";
 
-import "@maptiler/geocoding-control/style.css";
-import "./MapComponent.css";
-
-import { closeOptions, middleOptions, farOptions } from "../Circles";
-import { HouseIcon, MarkerIcon } from "../CustomMarker";
-import * as libFunctions from "../../lib";
+import { HouseIcon } from "../CustomMarker";
 import DetailsCard from "../DetailsCard";
 
-const {
-  constructAddress,
-  getIpLocation,
-  getPathBetweenOfficeAndHouse,
-  getHousesWithinRadius,
-} = libFunctions;
+import { animationDuration, initialZoomLvl } from "@/constants/constants";
+
+import InitialLoadLoader from "@/components/InitialLoadLoader";
+import { CloseCircle, FarCircle, MiddleCircle } from "@/components/Circles";
+import GeoEncodingComponent from "@/components/GeoEncodingComponent";
+
+import { getPathBetweenSrcAndDest } from "@/lib/getPathBetweenSrcAndDest";
+import { getHousesWithinRadius } from "@/lib/getHousesWithinRadius";
+import { getIpLocation } from "@/lib/getIpLocation";
+
+const openStreetMapUrl = import.meta.env.VITE_REACT_APP_OPENSTREET_MAP_URL;
+const attribution = import.meta.env.VITE_REACT_APP_ATTRIBUTION;
+
+if (!openStreetMapUrl || !attribution)
+  throw new Error("ENV configuration failed!!!");
 
 const MapComponent = () => {
-  const [mapCenter, setMapCenter] = useState({
-    lat: 30,
-    lng: 55,
-    city: null,
-    region: null,
-    country: null,
-  });
+  const mapRef = useRef();
   const [selectedLocation, setSelectedLocation] = useState({
     lat: null,
     lng: null,
-    place_name_en: "",
-    place_name: "",
-    loaded: false,
   });
 
-  const [status, setStatus] = useState(true);
-  const [mapLoading, setMapLoading] = useState(false);
   const [houses, setHouses] = useState(null);
-  const [path, setPath] = useState(null);
-  const [pathInfo, setPathInfo] = useState(null);
 
-  const zoomLvl = 12;
-  const animationDuration = 2;
-  const radius = 7500;
+  const {
+    data: initialLocation,
+    isLoading,
+    isError: isIpFetchingError,
+  } = useQuery({
+    queryKey: ["ipLocation"],
+    queryFn: getIpLocation,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    staleTime: 12 * 60 * 60 * 60,
+  });
 
-  const mapref = useRef();
+  const routeMutation = useMutation({
+    mutationFn: ({ src, dest }) => getPathBetweenSrcAndDest(src, dest),
+  });
+  const {
+    data: routeData,
+    isError: isRouteFetchingError,
+    isPending,
+  } = routeMutation;
 
   useEffect(() => {
-    function changeStatus() {
-      const onlineStatus = navigator.onLine;
-      setStatus(onlineStatus);
-
-      if (onlineStatus) {
-        toast.success("You Are Online");
-      } else {
-        toast.error("You Are Offline");
-      }
+    if (isIpFetchingError || isRouteFetchingError) {
+      toast.error("An error occurred while fetching data");
     }
-
-    window.addEventListener("online", changeStatus);
-    window.addEventListener("offline", changeStatus);
-
-    return () => {
-      window.removeEventListener("online", changeStatus);
-      window.removeEventListener("offline", changeStatus);
-    };
-  }, [status]);
-
-  useEffect(() => {
-    const fetchIpDataAndSetMapCenter = async () => {
-      try {
-        setMapLoading(true);
-
-        const { latitude, longitude, city, region, country } =
-          await getIpLocation();
-        setMapCenter({ lat: latitude, lng: longitude, city, region, country });
-        setSelectedLocation((prev) => ({
-          ...prev,
-          lat: latitude,
-          lng: longitude,
-          loaded: true,
-        }));
-
-        mapref?.current?.flyTo([latitude, longitude], zoomLvl, {
-          duration: animationDuration,
-        });
-      } catch (error) {
-        toast.error("An error occurred while fetching your location");
-        console.error("An error occurred while fetching IP data:", error);
-      } finally {
-        setMapLoading(false);
-      }
-    };
-
-    fetchIpDataAndSetMapCenter();
-
-    return () => {
-      setMapLoading(false);
-    };
-  }, []);
+  }, [isIpFetchingError, isRouteFetchingError]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -116,24 +72,19 @@ const MapComponent = () => {
       const notification = toast.loading("Fetching Houses...");
 
       try {
-        setPath(null);
+        routeMutation.reset();
         const houseData = await getHousesWithinRadius(
           selectedLocation.lat,
           selectedLocation.lng,
-          radius
+          7500
         );
-        const formattedData = houseData.map(({ lat, lon, tags }) => [
-          lat,
-          lon,
-          tags,
-        ]);
-        setHouses(formattedData);
-        toast.success(`${formattedData.length} Houses Found`, {
+        setHouses(houseData);
+        toast.success(`${houseData.length} Houses Found`, {
           id: notification,
         });
       } catch (error) {
-        console.error("An error occurred:", error);
-        toast.error("An Error Occurred While Fetching!!!", {
+        console.error("An error occurred: ", error);
+        toast.error("An Error Occurred While Fetching!!", {
           id: notification,
         });
       }
@@ -143,170 +94,112 @@ const MapComponent = () => {
   }, [selectedLocation.lat, selectedLocation.lng]);
 
   const handleGeocodeSelect = (event) => {
-    if (!event) return;
+    if (!event || !event.center) return;
 
-    const { center, place_name_en, place_name } = event;
+    const [lng, lat] = event.center;
+    setSelectedLocation({
+      lat,
+      lng,
+    });
 
-    if (center) {
-      const [lng, lat] = center;
-      setSelectedLocation({
-        lat,
-        lng,
-        place_name_en,
-        place_name,
-        loaded: true,
-      });
-
-      const newZoomLevel = zoomLvl + 1;
-      const flyOptions = {
-        duration: animationDuration,
-      };
-
-      mapref?.current?.flyTo([lat, lng], newZoomLevel, flyOptions);
-    }
+    mapRef?.current?.flyTo([lat, lng], initialZoomLvl + 1, {
+      duration: animationDuration,
+    });
   };
 
   const handleMarkerClick = async (event) => {
     const { lat, lng } = event.latlng;
-    const office = [selectedLocation.lat, selectedLocation.lng];
-    const house = [lat, lng];
-
-    const notification = toast.loading("Fetching Route...");
+    const src = [selectedLocation.lat, selectedLocation.lng];
+    const dest = [lat, lng];
 
     try {
-      setPath(null);
-      setPathInfo(null);
-      const routeData = await getPathBetweenOfficeAndHouse(office, house);
-
-      setPath(routeData.route.geometry.coordinates);
-      setPathInfo(routeData.route);
-      toast.success("Route Successfully Fetched", {
-        id: notification,
-      });
+      const notification = toast.loading("Fetching Houses...");
+      await routeMutation.mutateAsync({ src, dest });
+      toast.success("Route Successfully Fetched", { id: notification });
     } catch (error) {
-      console.error("An error occurred:", error);
-      toast.error("An Error Occurred While Fetching!!!", {
-        id: notification,
-      });
+      toast.error("An Error Occurred While Fetching!!", { id: "notification" });
+      console.error(
+        "An error occurred in [handlemarkerclick]",
+        isRouteFetchingError
+      );
     }
   };
 
   return (
     <div className="container">
-      {mapLoading ? (
-        <div className="loader">
-          <InfinitySpin width="200" color="red" />
-          <div>Loading Map...</div>
-          <div>Please Wait...</div>
-        </div>
+      {isLoading ? (
+        <InitialLoadLoader />
       ) : (
-        <>
-          <MapContainer
-            center={[mapCenter.lat, mapCenter.lng]}
-            zoom={zoomLvl}
-            zoomControl={false}
-            ref={mapref}
+        <MapContainer
+          center={[initialLocation.latitude, initialLocation.longitude]}
+          zoom={initialZoomLvl}
+          zoomControl={false}
+          ref={mapRef}
+        >
+          <TileLayer url={openStreetMapUrl} attribution={attribution} />
+          <ZoomControl position="topright" />
+
+          <Marker
+            position={[initialLocation.latitude, initialLocation.longitude]}
           >
-            <TileLayer
-              url={import.meta.env.VITE_REACT_APP_OPENSTREET_MAP_URL}
-              attribution={import.meta.env.VITE_REACT_APP_ATTRIBUTION}
-            />
-            <ZoomControl position="topright" />
+            <Popup>
+              {`${initialLocation?.city}, ${initialLocation?.region}, ${initialLocation?.country}`}
+            </Popup>
+          </Marker>
 
-            {selectedLocation.loaded && (
-              <>
-                <Marker
-                  position={[selectedLocation.lat, selectedLocation.lng]}
-                  title={selectedLocation.lat + ", " + selectedLocation.lng}
-                >
-                  <Popup>
-                    {selectedLocation.place_name_en ||
-                      selectedLocation.place_name}
-                  </Popup>
-                </Marker>
-                <Circle
-                  center={selectedLocation}
-                  pathOptions={closeOptions}
-                  radius={2500}
-                />
-                <Circle
-                  center={selectedLocation}
-                  pathOptions={middleOptions}
-                  radius={5000}
-                />
-                <Circle
-                  center={selectedLocation}
-                  pathOptions={farOptions}
-                  radius={7500}
-                />
-              </>
-            )}
+          {selectedLocation.lat && selectedLocation.lng && (
+            <>
+              <Marker
+                position={[selectedLocation.lat, selectedLocation.lng]}
+                title={selectedLocation.lat + ", " + selectedLocation.lng}
+              />
+              <CloseCircle center={selectedLocation} />
+              <MiddleCircle center={selectedLocation} />
+              <FarCircle center={selectedLocation} />
+            </>
+          )}
 
-            <MarkerClusterGroup
-              chunkedLoading
-              maxClusterRadius={150}
-              spiderfyOnMaxZoom={false}
-              disableClusteringAtZoom={17}
-            >
-              {houses &&
-                houses.map((house, index) => {
-                  const lat = house[0];
-                  const lng = house[1];
-                  const tags = house[2];
-                  const address = constructAddress(tags);
+          <MarkerClusterGroup
+            chunkedLoading
+            maxClusterRadius={150}
+            spiderfyOnMaxZoom={false}
+            disableClusteringAtZoom={17}
+          >
+            {houses &&
+              houses.map(({ lat, lng }, index) => {
+                return (
+                  <Marker
+                    key={index}
+                    position={[lat, lng]}
+                    title={lat + ", " + lng}
+                    icon={HouseIcon}
+                    eventHandlers={{
+                      click: handleMarkerClick,
+                    }}
+                  />
+                );
+              })}
+          </MarkerClusterGroup>
 
-                  if (lat !== undefined && lng !== undefined) {
-                    return (
-                      <Marker
-                        key={index}
-                        position={[lat, lng]}
-                        title={lat + ", " + lng}
-                        icon={HouseIcon}
-                        eventHandlers={{
-                          click: handleMarkerClick,
-                        }}
-                      >
-                        <Popup>
-                          <div>{address[0]}</div>
-                          <div>{address[1]}</div>
-                          <div>{address[2]}</div>
-                        </Popup>
-                      </Marker>
-                    );
-                  }
-                  return null;
-                })}
-            </MarkerClusterGroup>
+          {routeData && routeData?.geometry && (
+            <>
+              <Polyline
+                positions={routeData.geometry.coordinates}
+                pathOptions={{ color: "#00b0ff", weight: 5 }}
+              />
+              <Marker
+                position={
+                  routeData.geometry.coordinates[
+                    routeData.geometry.coordinates.length - 1
+                  ]
+                }
+                icon={HouseIcon}
+              />
+            </>
+          )}
 
-            {path && (
-              <>
-                <Polyline
-                  positions={path}
-                  pathOptions={{ color: "#00b0ff", weight: 5 }}
-                />
-                <Marker position={path[path.length - 1]} icon={HouseIcon} />
-                <DetailsCard pathInfo={pathInfo} />
-              </>
-            )}
-
-            <Marker position={[mapCenter.lat, mapCenter.lng]}>
-              <Popup>
-                {mapCenter.city && `${mapCenter.city}, `}
-                {mapCenter.region && `${mapCenter.region}, `}
-                {mapCenter.country && `${mapCenter.country}`}
-              </Popup>
-            </Marker>
-          </MapContainer>
-          <div className="geocoding">
-            <GeocodingControl
-              apiKey={import.meta.env.VITE_REACT_APP_MAPTILER_API_KEY}
-              fuzzyMatch={true}
-              debounceSearch={350}
-              placeholder="Search Your Office..."
-              onPick={handleGeocodeSelect}
-            />
-          </div>
-        </>
+          <GeoEncodingComponent handleGeocodeSelect={handleGeocodeSelect} />
+        </MapContainer>
       )}
     </div>
   );
